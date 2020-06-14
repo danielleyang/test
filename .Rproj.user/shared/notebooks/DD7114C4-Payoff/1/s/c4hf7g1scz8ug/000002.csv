@@ -1,0 +1,13 @@
+"0","LC_total$term = gsub(\"months\", \"\", LC_total$term)
+LC_total$term = as.numeric(LC_total$term)
+
+Risk_List = c('member_id','grade','loan_status','installment','term','funded_amnt','total_pymnt','total_rec_int','total_rec_late_fee')
+Risk = LC_total[,Risk_List]
+Risk$profit = ''
+Risk$profit = ifelse (Risk$loan_status == \"Charged Off\"|Risk$loan_status == \"Default\"
+                     |Risk$loan_status == \"Late (16-30 days)\"|Risk$loan_status == \"Late (31-120 days)\",
+                      Risk$total_rec_int + Risk$total_rec_late_fee - (Risk$installment * Risk$term - Risk$total_pymnt),
+                      Risk$installment * Risk$term - Risk$funded_amnt + Risk$total_rec_late_fee)
+
+#### Figure 7
+Risk %>% group_by(grade) %>% summarize(., Revenue = sum(profit)) %>% ggplot(., aes(x = grade, y = Revenue, fill= grade)) + geom_bar(stat=\"identity\") + geom_text(aes(label = round(Revenue,0)), position = position_dodge(width=0.9), vjust=-0.25)"

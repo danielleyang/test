@@ -1,0 +1,7 @@
+"0","## Environment setup"
+"0","library(readxl)"
+"0","library(dplyr)"
+"0","library(ggplot2)"
+"0","## Read data"
+"0","data = read_excel(""BizOps_Sample Data.xlsx"")"
+"0","data = as.data.frame(data)"

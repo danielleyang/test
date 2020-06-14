@@ -1,0 +1,15 @@
+"0","### Calculate Default rate for each month
+DR = LC_total%>% group_by(grade) %>%
+  summarize(., default_only = sum(loan_status == \"Default\") / n() * 100, ch_only = sum(loan_status == \"Charged Off\") / n() * 100,
+  both = (sum(loan_status == \"Default\") + sum(loan_status == \"Charged Off\"))/ n() * 100 )
+
+LC_model_new = LC_total[,c(\"member_id\", \"funded_amnt\", \"grade\", \"emp_length\", \"home_ownership\", \"annual_inc\", \"loan_status\",\"purpose\", \"dti\", \"delinq_2yrs\", \"inq_last_6mths\", \"open_acc\", \"revol_bal\", \"revol_util\", \"total_acc\")]
+LC_model$dr = ''
+for (i in 1:nrow(LC_model)) {
+  for (j in 1:nrow(DR))
+  if (LC_model$grade[i] == DR$grade[j]){
+      LC_model$dr[i] = DR$both[j]
+  }
+}
+
+fit = lm(dr ~ grade + emp_length + home_ownership + annual_inc + purpose + dti + delinq_2yrs + inq_last_6mths + revol_bal + revol_util + total_acc, data = LC_model_new)"

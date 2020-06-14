@@ -1,0 +1,221 @@
+setwd("~/Box Sync/2016Fall (jenny91515@gmail.com)/STA206/Projects")
+library(MASS)
+library(leaps)
+# I. Introduction
+# a. Read the files into R
+ab = read.table('abalone.txt', sep = ',')
+colnames(ab) = c('sex', 'length', 'diameter', 'height', 'w_weight', 'sck_weight', 'v_weight','s_weight', 'rings')
+
+# II Methods and Results
+# 1. Pre-process data
+# a. Check missing values in the data frame
+any(is.na(ab)) # return FALSE. no NA
+
+# b. Summary of this dataset
+summary(ab)
+sapply(ab, class) # Check class
+
+# c. Add variable years and drop variable rings [years = rings + 1.5] 
+ab$years = ab$rings + 1.5
+keep = c('sex', 'length', 'diameter', 'height', 'w_weight', 'sck_weight', 'v_weight',
+         's_weight', 'years')
+ab_df = ab
+
+# d. Explore categorical and continous variables by plotting the graphs
+# Histogram and boxplot for quantitative variables
+par(mfrow = c(2,2))
+for(i in 2:10) {
+  hist(ab_df[, i], main = paste("Histogram of", colnames(ab_df)[i]), xlab = colnames(ab_df)[i])
+  boxplot(ab_df[, i], main = paste("Boxplot of", colnames(ab_df)[i]), xlab = colnames(ab_df)[i])
+}
+# Piechart and boxplot for categorical variables 
+par(mfrow = c(1,2))
+n = nrow(ab_df)
+lbls=c('F','I','M')
+pct=round(100*table(ab_df$sex)/n)
+lab=paste(lbls,pct)
+lab=paste(lab,'%',sep='')
+pie(table(ab_df$sex),labels=lab,col=c('blue','purple','green','yellow'),main='Sex')
+boxplot(ab_df$years ~ ab_df$sex,main = 'Sex', xlab = "Sex", ylab = "year", col = rainbow(5))
+
+# e. Use Box-cox to determine the degree of transformation for response variable - years 
+par(mfrow = c(1,1))
+boxcox(years ~ ., data = ab_df)
+
+# f. Correlation and pair-wise scatter plot of all variables
+ab_df$log_years = log(ab_df$years)
+keep = c('sex', 'length', 'diameter', 'height', 'w_weight', 'sck_weight', 'v_weight','s_weight', 'log_years')
+ab_s = ab_df[ , keep, drop = FALSE] #drop years from data frame, only keep log_year
+ab_s = ab_s[,c(9,1:8)]
+######## From now on, the dataframe ab_s is our model dataframe name ########
+# Correlation and pair-wise scatter plot
+pairs(ab_s)
+cor(ab_s[,c(1,3:9)]) 
+
+# g. Split the data into two parts and one for training and one for validation.
+set.seed(1)
+n.s=nrow(ab_s)
+index.s=sample(1: n.s, size=2089, replace=FALSE)
+data.t = ab_s[index.s, ] # training data
+data.v = ab_s[-index.s, ] # validation data
+
+# 2. Build models
+# a. First order model 
+model1 = lm(log_years~., data = data.t)
+# a1. AIC,BIC, etc, first order
+sub_set = regsubsets(log_years ~ ., data = data.t, nbest = 1, nvmax = 16, method = 'exhaustive')
+sum_sub = summary(sub_set)
+n = nrow(data.t)
+p.m = as.integer(rownames(sum_sub$which)) + 1
+ssto = sum((data.t$log_years - mean(data.t$log_years))^2)
+sse = (1 - sum_sub$rsq) * ssto
+aic = n * log(sse/n) + 2*p.m
+bic = n * log(sse/n) + log(n)*p.m
+res_sub = cbind(sum_sub$which, sse, sum_sub$rsq, sum_sub$adjr2, sum_sub$cp, aic, bic)
+
+# a2. Null model with intercept only
+fit1 = lm(log_years ~ 1, data = data.t)
+sse1 = sum(fit1$residuals^2)
+p = 1 #only one parameter
+c1 = sse1/summary(model1)$sigma^2 - (n-2*p)
+aic1 = n*log(sse1/n)+2*p
+bic1 = n*log(sse1/n)+log(n)*p
+none = c(1,rep(0,9),sse1,0,0,c1,aic1,bic1)
+
+# a3. Combined model selection criteria for first model
+res_sub = rbind(none,res_sub)
+colnames(res_sub)=c(colnames(sum_sub$which),"sse", "R^2", "R^2_a", "Cp", "aic", "bic")
+View(res_sub)
+
+# a4. Stepwise selection, first order
+step_f = stepAIC(fit1, scope = list(upper = model1, lower = ~1), direction = 'both')
+
+# a5.T he best possible first order model
+anova(step_f) # Length p value: 0.1029  
+fs1 = lm(log_years ~ height + s_weight + sck_weight + diameter + sex + w_weight + v_weight , data = data.t)
+summary(fs1)
+
+# b. Second order model 
+model2 =  lm(log_years ~ .^2 + I(w_weight^2)+I(sck_weight^2)+I(v_weight^2)+I(s_weight^2), data = data.t)
+# b1. The best possible second order model
+step_f2 = stepAIC(fit1, scope = list(upper = model2, lower = ~1), direction = 'both')
+anova(step_f2)
+fs2 = lm(step_f2, data = data.t)
+summary(fs2)
+
+# 3. Model Validation
+# a. Internal Validation
+# use model2 as full model, fs1 and fs2 are submodel of model2
+mse2 = anova(model2)['Residuals', 3]
+sse.fs1 = anova(step_f)['Residuals', 2] 
+sse.fs2 = anova(step_f2)['Residuals', 2]
+mse.fs1=anova(step_f)["Residuals",3] #MSE for Model fs1
+mse.fs2=anova(step_f2)["Residuals",3] #MSE for Model fs2
+p.fs1=length(step_f$coefficients)
+p.fs2=length(step_f2$coefficients)
+cp.fs1=sse.fs1/mse2-(n-2*p.fs1) #C_p for Model fs1, n is the sample size for training data
+cp.fs2=sse.fs2/mse2-(n-2*p.fs2) #C_p for Model fs2
+press.fs1=sum(step_f$residuals^2/(1-influence(step_f)$hat)^2)
+press.fs2=sum(step_f2$residuals^2/(1-influence(step_f2)$hat)^2)
+
+fs1_internal = c(cp.fs1, press.fs1/n, press.fs1, sse.fs1, mse.fs1)
+fs2_internal = c(cp.fs2, press.fs2/n, press.fs2, sse.fs2, mse.fs2)
+
+sum_internal = rbind(fs1_internal, fs2_internal)
+colnames(sum_internal) = c('Cp', 'Press_p/n', 'Press_p', 'SSEp', 'MSEp')
+sum_internal
+
+# b. External Validation
+### First Order Model###
+fit.fs1.v = lm(step_f, data = data.v)
+
+# percent change in parameter estimation
+round(abs(coef(step_f)-coef(fit.fs1.v))/abs(coef(step_f))*100,3)
+
+# percent change in standard errors
+sd.fs1= summary(step_f)$coefficients[,"Std. Error"]
+sd.fs1.v= summary(fit.fs1.v)$coefficients[,"Std. Error"]
+round(abs(sd.fs1-sd.fs1.v)/sd.fs1*100,3)
+
+# mean squared prediction error
+newdata = data.v[, -1]
+pred.fs1 = predict.lm(step_f, newdata)
+mspe.fs1 = mean((pred.fs1 - data.v[, 1])^2)
+
+# SSEp 
+sse.fs1.v = anova(fit.fs1.v)["Residuals",2]
+
+### Second Order Model###
+fit.fs2.v = lm(step_f2, data = data.v)
+
+#percent change in parameter estimation
+round(abs(coef(step_f2)-coef(fit.fs2.v))/abs(coef(step_f2))*100,3)
+
+# percent change in standard errors
+sd.fs2= summary(step_f2)$coefficients[,"Std. Error"]
+sd.fs2.v= summary(fit.fs2.v)$coefficients[,"Std. Error"]
+round(abs(sd.fs2-sd.fs2.v)/sd.fs2*100,3)
+
+# mean squared prediction error
+pred.fs2 = predict.lm(step_f2, newdata)
+mspe.fs2 = mean((pred.fs2 - data.v[, 1])^2)
+
+# SSEp 
+sse.fs2.v = anova(fit.fs2.v)["Residuals",2]
+
+fs1_external = c(mspe.fs1, sse.fs1.v/(n-1)) # n-1 is the sample size of test data, 2088
+fs2_external = c(mspe.fs2, sse.fs2.v/(n-1))
+
+sum_external = rbind(fs1_external, fs2_external)
+colnames(sum_external) = c('MSPE', 'SSE/n')
+sum_external
+
+# 4. Model Diagnostics
+# a. Check residuals if they are satisfied the assumptions for equal variance, and normal distribution
+fs_final = lm(step_f2, data = ab_s)
+par(mfrow = c(1,2))
+plot(fs_final, which = 1)
+plot(fs_final, which = 2)
+
+# b. Identify outlying Y
+## check outliers in Y
+res = fs_final$residuals# residuals of the final model
+n = nrow(ab_s)
+p = length(fs_final$coefficients)
+h1 = influence(fs_final)$hat
+d.res.std = studres(fs_final) #studentized deleted residuals
+head(sort(abs(d.res.std), decreasing=TRUE))
+idx.Y = as.vector(which(abs(d.res.std)>=qt(1-0.05/(2*n),n-p-1)))# bonferronis thresh hold
+idx.Y 
+
+# c. Identify outlying X
+idx.X = as.vector(which(h1>(2*p/n)))
+head(idx.X)
+h1[c(82,84,86,110)]
+plot(h1,res,xlab="leverage",ylab="residuals")
+
+# d. Indentify influential point
+par(mfrow = c(1,2))
+plot(fs_final, which = 4)
+plot(fs_final, which = 5)
+
+res = fs_final$residuals
+mse = anova(fs_final)["Residuals", 3]
+cook.d = res^2*h1/(p*mse*(1-h1)^2)
+table(sort(cook.d[idx.X], decreasing = TRUE) > 4/(n-p))
+table(sort(cook.d[idx.X], decreasing = TRUE) > 1)
+
+ab_s.1 = ab_s[-2052,]
+fs_final.1 = lm(step_f2, data = ab_s.1)
+fitted = fitted(fs_final)
+fitted.c = fitted[-2052]
+fitted.1 = fitted(fs_final.1)
+apd = 0
+for (i in 1:length(fitted.c)){
+  apd = apd + abs((fitted[i] - fitted.1[i])/fitted[i])
+}
+
+# e. Calculate the 2052th absolute percent difference for the prediction with/without influential point 
+year_expect = predict(fs_final.1, ab_s[2052,])
+apd = apd + abs((fitted[2052] - year_expect)/fitted[2052])
+apd/nrow(ab_s)

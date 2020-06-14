@@ -1,0 +1,168 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+## Environment setup
+library(readxl)
+library(dplyr)
+library(ggplot2)
+## Read data
+data = read_excel("BizOps_Sample Data.xlsx")
+data = as.data.frame(data)
+```
+
+
+### First, we need to QA this data before doing the analysis
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+data$Customer_restaurant = as.numeric(difftime(strptime(data$`Placed order with restaurant datetime`, "%d %H:%M:%S"),strptime(data$`Customer placed order datetime`, "%d %H:%M:%S")))/60
+
+data$Restaurant_Driver = as.numeric(difftime(strptime(data$`Driver at restaurant datetime`, "%d %H:%M:%S"),strptime(data$`Placed order with restaurant datetime`, "%d %H:%M:%S")))/60
+
+data$Driver_Consumer = as.numeric(difftime(strptime(data$`Delivered to consumer datetime`, "%d %H:%M:%S"),strptime(data$`Driver at restaurant datetime`, "%d %H:%M:%S")))/60
+
+data$Customer_Consumer = as.numeric(difftime(strptime(data$`Delivered to consumer datetime`, "%d %H:%M:%S"),strptime(data$`Customer placed order datetime`, "%d %H:%M:%S")))/60
+
+data$Driver_Restaurant_hour = as.numeric(format(strptime(data$`Driver at restaurant datetime`, "%d %H:%M:%S"), "%H"))
+
+## Exclude records
+test = data[(data$`Driver ID` == 426 & data$`Restaurant ID` == 408),]
+data = data[!(data$`Driver ID` == 426 & data$`Restaurant ID` == 408),]
+data$status = ifelse(as.numeric(difftime(strptime(data$`Delivered to consumer datetime`, "%d %H:%M:%S"),strptime(data$`Placed order with restaurant datetime`, "%d %H:%M:%S")))/60<=0, FALSE,TRUE)
+test1 = data[which(data$status == FALSE),]
+test2 = rbind(test,test1[,1:19])
+data = data[!(data$status == FALSE),]
+
+## 
+```
+
+Each record in this dataset has a series of events. First, the consumer requests food. Then, doordash places an order. Then, the driver arrives at the restaurant. Lastly, the driver deliveres the food. The second and the third steps sometimes can switch. However, the first should always be the earliest time point. And the last should always be the last time point.   
+By examing the timestamp of these events for each dash, I found 10 records which orders were placed with restaurant after order delivered. These data were outliers and may skew our analysis later on.   
+
+```{r}
+test2[,1:4]
+```
+
+When checking the delivery duration since picking up, there are 41 records which show that it took less than 5 mins. In those cases, the drivers may forget to confirm the pick up at the restaurant and remember to confirm on the way to the consumers since 5 mins are usually too short to finish a delivery. The average time is 22 mins in this dataset. 
+
+```{r echo=TRUE, warning=TRUE}
+## Deliver time is less than 5
+data2 = data[which(data$Driver_Consumer <= 5),]
+quantile(data$Driver_Consumer, probs = c(0,0.5,1),na.rm=TRUE) ## average time shows 22 mins
+```
+
+When checking the discount codes, there were 114 dashes (ordered by 39 unique consumers) which amount of discount were the same as order total. Within these consumers, 9 (or 23%) of consumers were old customers. Among these old consumers, I found consumerID 514 placed 66 orders and had them all free. I was not clear about why this happened. But this is an interesting finding. 
+
+```{r echo=FALSE}
+data[which(data$`Order total` - data$`Amount of discount` == 0),] %>% group_by(`Is New`,`Consumer ID`) %>% summarize(Number  = n())
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+outliers = function(df,col1,col2,col3){
+  for (i in 1:nrow(df)){
+    if (df[i,col1] <= 0) {
+      if (as.numeric(format(strptime(df[i,col2], "%d %H:%M:%S"), "%d")) == 31 &  as.numeric(format(strptime(df[i,col3], "%d %H:%M:%S"), "%d")) == 1)
+      {
+        return(TRUE)
+      }
+      else 
+      {
+        return(FALSE)
+      }
+    }
+
+  else {
+    return(TRUE)
+  }
+  }
+}
+
+EDA_continuous = function(df,column1,column2){
+  par(mfrow = c(2,2))
+  for(i in column1:column2) {
+    hist(df[, i], main = paste("Histogram of", colnames(df)[i]), xlab = colnames(df)[i])
+    boxplot(df[, i], main = paste("Boxplot of", colnames(df)[i]), xlab = colnames(df)[i])
+}}
+```
+
+
+# Think1: How long does it take from placing orders to driver at restaurant?
+There were 101 deliveres which driver arrived earlier before we placed an order. It shows that notifying dashers to pick up food can either happen before placing orders or after placing orders with restaurant. 
+The timing of notifying drivers is also quite important since there are traffic on the way to pick up food and there are cooking time for restaurants to cook food. We also need to take the food amount into consideration. Catering food takes longer time to cook. Therefore, I grouped the orders based on the percentile of order total. 
+1.   Order total less than $24 is extra small orders
+2.   Order total more than $24 but less than $34 is small orders
+3.   Order total more than $34 but less than $45 is medium orders
+4.   Order total more than $45 but less than $65 is large orders
+5.   Order total more than $65 is extra large orders
+My hypothesis is that the more expensive the order is, the longer the restaurant will take to make the food. And the order isn't ASAP. It may take shorter time 
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+data$status = ifelse(data$Restaurant_Driver <=0, FALSE, TRUE)
+table(data$status) # False means driver is earlier than order placed
+
+## Distribution of orders amount
+EDA_continuous(as.data.frame(data[data$`Order total`,]),11,11)
+quantile(data$`Order total`, probs = c(0, 0.2, 0.4, 0.6,0.8, 1),na.rm = TRUE)
+
+data$order_category = ''
+for (i in 1:nrow(data)) {
+  if (is.na(data[i,11])){
+    data[i,20] = 'NULL'
+  }
+  else if (data[i,11]>=0 & data[i,11] <= 24) {
+    data[i,20] = 'Extra small order'
+  }
+  
+  else if (data[i,11] > 24 & data[i,11] <= 34) {
+    data[i,20] = 'Small order'
+  }
+  
+  else if (data[i,11] > 34 & data[i,11] <= 45) {
+    data[i,20] = 'Medium order'
+  }
+    
+  else if (data[i,11] > 45 & data[i,11] <= 65) {
+    data[i,20] = 'Large order'
+  }
+  
+  else if (data[i,11] > 65) {
+    data[i,20] = 'Extra Large order'
+  }
+}
+
+write.csv(data,'new_data1.csv')
+```
+
+
+```{r}
+EDA_contineous = function(df,column1,column2){
+  par(mfrow = c(2,2))
+  for(i in column1:column2) {
+    hist(df[, i], main = paste("Histogram of", colnames(df)[i]), xlab = colnames(df)[i])
+    boxplot(df[, i], main = paste("Boxplot of", colnames(df)[i]), xlab = colnames(df)[i])
+}}
+
+## Distribution of orders amount
+EDA_contineous(as.data.frame(data[data$`Order total`<"100",]),11,11)
+
+## Distribution of Driver to consumer time duration
+EDA_contineous(as.data.frame(data),17,17)
+```
+
+
+## Distribution of Driver to consumer time duration
+```{r}
+p = data %>% group_by(`Delivery Region`,Driver_Restaurant_hour) %>% summarize(avg_time = round(mean(Driver_Consumer),2), sd_time = round(sd(Driver_Consumer),2))
+
+ggplot(data = p[p$`Delivery Region` == 'Mountain View',], aes(x = Driver_Restaurant_hour, y = avg_time, fill= factor(Driver_Restaurant_hour))) + geom_bar(stat="identity") + coord_flip() + geom_text(aes(label = Driver_Restaurant_hour), position = position_dodge(width=0.9), vjust=-0.25) #Figure 4
+
+
+#write.csv(p,"Driver_to_consumerbyregionbyhour.csv",col.names=TRUE,)
+```
+
+```{r}
+data %>% group_by(`Delivery Region`) %>% summarize(avg_1 = round(mean(Driver_Consumer,na.rm = TRUE),2), sd_time_1 = round(sd(Driver_Consumer,na.rm = TRUE),2),avg_2 = round(mean(Restaurant_Driver,na.rm = TRUE),2), sd_time_2 = round(sd(Restaurant_Driver,na.rm = TRUE),2))
+```
+

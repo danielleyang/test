@@ -1,0 +1,3 @@
+"0","b = tail(arrange(Home2007,desc(SaleAmount)), n = 5)[,1:5]"
+"0","MAPE2007 = mean(abs((Home2007$SaleAmount-Home2007$ZestimateOnSaleDate)/Home2007$SaleAmount) * 100)"
+"0","MAPEleast5 = mean(abs((b$SaleAmount-b$ZestimateOnSaleDate)/b$SaleAmount) * 100)"

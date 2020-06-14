@@ -1,0 +1,23 @@
+"0","# Value of loan disbursed (PI5476)/Number of loan disbursed (PI8381)
+Loan_amt = LC_total[,c(\"issue_d\",\"funded_amnt\",\"loan_status\")]
+Loan_volume_dollar = Loan_amt  %>% group_by(issue_d) %>% summarize(., By_Dollars = sum(funded_amnt))
+dates = as.yearmon(Loan_volume_dollar$issue_d,\"%b-%Y\")
+Loan_volume_dollar = Loan_volume_dollar[order(dates),]
+Loan_volume_dollar.c = Loan_volume_dollar
+Loan_volume_dollar.c$By_Dollars = prettyNum(Loan_volume_dollar.c$By_Dollars,big.mark = \",\")
+
+Loan_amt.c = Loan_amt[Loan_amt$loan_status != \"Fully Paid\",]
+Loan_volume_size = Loan_amt.c %>% group_by(issue_d) %>% summarize(., By_Size = sum(funded_amnt)/ n())
+dates = as.yearmon(Loan_volume_size$issue_d,\"%b-%Y\")
+Loan_volume_size = Loan_volume_size[order(dates),]
+Loan_volume_size.c = Loan_volume_size
+Loan_volume_size.c$By_Size = prettyNum(Loan_volume_size.c$By_Size,big.mark = \",\")
+
+Loan_volume.c = cbind(Loan_volume_dollar.c, Loan_volume_size.c$By_Size)
+colnames(Loan_volume.c) = c(\"Date\",\"Monthly total loan volume by dollars\",\"Monthly total loan volume by size\")
+
+#### Figure 4&5
+Loan_volume.2008 = Loan_volume.c[8:19,]
+Loan_volume.2008$Date <- factor(Loan_volume.2008$Date, levels = Loan_volume.2008$Date)
+ggplot(data = Loan_volume.2008, aes(x = Date, y = `Monthly total loan volume by dollars`, fill= factor(Date))) + geom_bar(stat=\"identity\") + coord_flip() + geom_text(aes(label = `Monthly total loan volume by dollars`), position = position_dodge(width=0.9), vjust=-0.25) #Figure 4
+ggplot(data = Loan_volume.2008, aes(x = Date, y = `Monthly total loan volume by size`, fill= Date)) + geom_bar(stat=\"identity\") + coord_flip() + geom_text(aes(label = `Monthly total loan volume by size`), position = position_dodge(width=0.9), vjust=-0.25)#Figure 5"

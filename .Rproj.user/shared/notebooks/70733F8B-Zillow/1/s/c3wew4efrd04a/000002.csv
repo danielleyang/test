@@ -1,0 +1,2 @@
+"0","Home_Zestimate = Zestimate %>% left_join(Homes, by = ""PropertyID"")"
+"0","Home_Zestimate[Home_Zestimate$Zestimateyear == 2007,] %>% group_by(Street) %>% summarise(mean = mean(ZestimateAmount),max = max(ZestimateAmount), min = min(ZestimateAmount) )"

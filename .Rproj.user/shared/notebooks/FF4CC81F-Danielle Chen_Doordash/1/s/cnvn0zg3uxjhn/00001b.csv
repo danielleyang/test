@@ -1,0 +1,13 @@
+"0","data$status = ifelse(data$Restaurant_Driver <=0, FALSE, TRUE)
+table(data$status) # False means driver is earlier than order placed
+"
+"1","
+"
+"1","FALSE "
+"1"," TRUE "
+"1","
+"
+"1","  101 "
+"1","13393 "
+"1","
+"

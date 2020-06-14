@@ -1,0 +1,187 @@
+---
+title: "Payoff_Takehome"
+output:
+  html_document: default
+  html_notebook: default
+  pdf_document: default
+---
+```{r eval=FALSE}
+library(RPostgreSQL)
+library(dplyr)
+library(plotly)
+library(zoo)
+library(MASS)
+```
+
+#### Step1. Setup and Obtain the dataset
+```{r eval=FALSE}
+### Load the postgre driver
+drv <- dbDriver("PostgreSQL")
+
+### Creates a connection called payoff to the postgres database
+payoff <- dbConnect(drv, dbname = "intern", host = "interndb-2.ctranyfsb6o1.us-east-1.rds.amazonaws.com", port = 5432,
+                 user = "payoff_intern", password = "reallysecure")
+
+### Check if the tables exist
+dbExistsTable(payoff, "lending_club_2007_2011") # return TRUE
+```
+
+#### Step2. Does the data have any outliers?
+```{r eval=FALSE}
+### A. Combine all the tables
+LC0711_complete = dbGetQuery(payoff, "SELECT * FROM lending_club_2007_2011")
+LC1213_complete = dbGetQuery(payoff, "SELECT * FROM lending_club_2012_2013")
+LC14_completed = dbGetQuery(payoff, "SELECT * FROM lending_club_2014")
+LC15_completed = dbGetQuery(payoff, "SELECT * FROM lending_club_2015")
+LC_total = rbind(LC0711_complete,LC1213_complete)
+LC_total = rbind(LC_total,LC14_completed)
+LC_total = rbind(LC_total,LC15_completed)
+
+### B. Unify the format 
+### b1. Remove the %
+LC_total$int_rate = gsub("%", "", LC_total$int_rate)
+LC_total$int_rate = as.numeric(LC_total$int_rate)
+LC_total$revol_util = gsub("%", "", LC_total$revol_util)
+LC_total$revol_util = as.numeric(LC_total$revol_util)
+
+### b2. Only keep year for these 5 variables "issue_d","earliest_cr_line","last_pymnt_d","next_pymnt_d","last_credit_pull_d"
+Dates_List = c("issue_d","earliest_cr_line","last_pymnt_d","next_pymnt_d","last_credit_pull_d")
+LC_total.c = LC_total
+for (i in 1:length(Dates_List)){
+  date = as.yearmon(LC_total.c[,Dates_List[i]],"%b-%Y")
+  LC_total.c[,Dates_List[i]] = format(date, "%Y")
+}
+
+### b3.Remove Loans that do not meet the credit policy and NA in member_id
+LC_total = LC_total[!LC_total$id == "Loans that do not meet the credit policy",]
+# List_names = colnames(LC0711_complete)[colSums(is.na(LC1213_complete)) > 180000]
+
+### D. Check Categorical Variables
+Categorical_List = c("term","grade","sub_grade","home_ownership","loan_status","purpose","addr_state")
+sapply(LC_total[,Categorical_List], table)
+#### Figure 1. Pie_chart for grade
+n = nrow(LC_total)
+lbls=c('A','B','C','D','E','F','G')
+pct=round(100*table(LC_total$grade)/n)
+lab=paste(lbls,pct)
+lab=paste(lab,'%',sep='')
+pie(table(LC_total$grade),labels=lab,main='Grade')
+### d1. Remove "Does not meet the credit policy. Status:"
+remove_status = function(d){
+  d.c = d
+  idx = which(colnames(d.c)=="loan_status")
+  d.c[,idx] = ifelse(grepl("Does not meet the credit policy. Status:", d.c[,idx]),
+              gsub("Does not meet the credit policy. Status:", "", d.c[,idx]), d.c[,idx])
+  return(d.c)
+}
+LC_total = remove_status(LC_total)
+
+### E. Check 6 summary statistics for all quantitative variables.
+summary(LC_total[,-which(names(LC_total) %in% c("id", "member_id","emp_title","emp_length", "verification_status","verification_status_joint","pymnt_plan", "url", "desc", "title","zip_code","initial_list_status", "policy_code", "application_type", "acc_now_deling", "deling_amnt", "pub_rec_bankrupticies", Categorical_List,Dates_List))])
+
+### F. Plot Boxplot and Histogram for quantitative variables
+List_names = colnames(LC_total)[colSums(is.na(LC_total)) > 400000]
+Quantitative_List  = names(LC_total)[!names(LC_total) %in% c("id", "member_id","emp_title","emp_length", "verification_status","verification_status_joint","pymnt_plan", "url", "desc", "title","zip_code","initial_list_status", "policy_code", "application_type", "acc_now_deling", "deling_amnt", "pub_rec_bankrupticies", Categorical_List,Dates_List,List_names)]
+
+par(mfrow = c(3,3))
+for(i in 1:length(Quantitative_List)) {
+  hist(LC_total[, Quantitative_List[i]], main = paste("Histogram of", Quantitative_List[i]), xlab = Quantitative_List[i])
+  boxplot(LC_total[, Quantitative_List[i]], main = paste("Boxplot of", Quantitative_List[i]), xlab = Quantitative_List[i])#### Figure3
+}
+#### Figure 2 An example of histogram
+par(mfrow = c(2,2))
+for(i in 1:4) {
+  hist(LC_total[, Quantitative_List[i]], main = paste("Histogram of", Quantitative_List[i]), xlab = Quantitative_List[i])
+}
+
+
+```
+
+#### Step3. What is the monthly total loan volume by dollars and by average loan size?
+```{r eval=FALSE}
+# Value of loan disbursed (PI5476)/Number of loan disbursed (PI8381)
+Loan_amt = LC_total[,c("issue_d","funded_amnt","loan_status")]
+Loan_volume_dollar = Loan_amt  %>% group_by(issue_d) %>% summarize(., By_Dollars = sum(funded_amnt))
+dates = as.yearmon(Loan_volume_dollar$issue_d,"%b-%Y")
+Loan_volume_dollar = Loan_volume_dollar[order(dates),]
+Loan_volume_dollar.c = Loan_volume_dollar
+Loan_volume_dollar.c$By_Dollars = prettyNum(Loan_volume_dollar.c$By_Dollars,big.mark = ",")
+
+Loan_amt.c = Loan_amt[Loan_amt$loan_status != "Fully Paid",]
+Loan_volume_size = Loan_amt.c %>% group_by(issue_d) %>% summarize(., By_Size = sum(funded_amnt)/ n())
+dates = as.yearmon(Loan_volume_size$issue_d,"%b-%Y")
+Loan_volume_size = Loan_volume_size[order(dates),]
+Loan_volume_size.c = Loan_volume_size
+Loan_volume_size.c$By_Size = prettyNum(Loan_volume_size.c$By_Size,big.mark = ",")
+
+Loan_volume.c = cbind(Loan_volume_dollar.c, Loan_volume_size.c$By_Size)
+colnames(Loan_volume.c) = c("Date","Monthly total loan volume by dollars","Monthly total loan volume by size")
+
+#### Figure 4&5
+Loan_volume.2008 = Loan_volume.c[8:19,]
+Loan_volume.2008$Date <- factor(Loan_volume.2008$Date, levels = Loan_volume.2008$Date)
+ggplot(data = Loan_volume.2008, aes(x = Date, y = `Monthly total loan volume by dollars`, fill= factor(Date))) + geom_bar(stat="identity") + coord_flip() + geom_text(aes(label = `Monthly total loan volume by dollars`), position = position_dodge(width=0.9), vjust=-0.25) #Figure 4
+ggplot(data = Loan_volume.2008, aes(x = Date, y = `Monthly total loan volume by size`, fill= Date)) + geom_bar(stat="identity") + coord_flip() + geom_text(aes(label = `Monthly total loan volume by size`), position = position_dodge(width=0.9), vjust=-0.25)#Figure 5
+```
+
+#### Step4. What are the default rates by Loan Grade?
+```{r eval=FALSE}
+#### Figure 6
+LC_total  %>% group_by(grade) %>%
+  summarize(., default_only = sum(loan_status == "Default") / n() * 100, ch_only = sum(loan_status == "Charged Off") / n() * 100,
+  both = (sum(loan_status == "Default") + sum(loan_status == "Charged Off"))/ n() * 100 ) %>%
+  ggplot(., aes(x = grade, y = both, fill= grade)) + geom_bar(stat="identity") + geom_text(aes(label = round(both,2)), position = position_dodge(width=0.9), vjust=-0.25)
+
+#### Ploty_url
+p = LC_total  %>% group_by(grade) %>%
+  summarize(., default_only = sum(loan_status == "Default") / n() * 100, ch_only = sum(loan_status == "Charged Off") / n() * 100,
+  both = (sum(loan_status == "Default") + sum(loan_status == "Charged Off"))/ n() * 100 ) %>%
+  plot_ly(type = "bar", x = ~grade, y = ~ch_only,name = 'Charged off',marker = list(color = 'rgba(246, 78, 139, 0.6)',line = list(color = 'rgba(246, 78, 139, 1.0)',width = 3))) %>% 
+  add_trace(y = ~default_only,name = 'Default',marker = list(color = 'rgba(58, 71, 80, 0.6)',line = list(color = 'rgba(58, 71, 80, 1.0)',width = 3)))%>%
+  layout(barmode = 'stack',
+         xaxis = list(title = ""),
+         yaxis = list(title =""))
+```
+
+#### Step5. Are we charging an appropriate rate for risk?
+```{r eval=FALSE}
+LC_total$term = gsub("months", "", LC_total$term)
+LC_total$term = as.numeric(LC_total$term)
+
+Risk_List = c('member_id','grade','loan_status','installment','term','funded_amnt','total_pymnt','total_rec_int','total_rec_late_fee')
+Risk = LC_total[,Risk_List]
+Risk$profit = ''
+Risk$profit = ifelse (Risk$loan_status == "Charged Off"|Risk$loan_status == "Default"
+                     |Risk$loan_status == "Late (16-30 days)"|Risk$loan_status == "Late (31-120 days)",
+                      Risk$total_rec_int + Risk$total_rec_late_fee - (Risk$installment * Risk$term - Risk$total_pymnt),
+                      Risk$installment * Risk$term - Risk$funded_amnt + Risk$total_rec_late_fee)
+
+#### Figure 7
+Risk %>% group_by(grade) %>% summarize(., Revenue = sum(profit)) %>% ggplot(., aes(x = grade, y = Revenue, fill= grade)) + geom_bar(stat="identity") + geom_text(aes(label = round(Revenue,0)), position = position_dodge(width=0.9), vjust=-0.25)
+```
+
+#### Step6. What are the top 5 predictors of default rate by order of importance? Explain the model that you used and discuss how you validated it.
+```{r eval=FALSE}
+### Calculate Default rate for each month
+DR = LC_total%>% group_by(grade) %>%
+  summarize(., default_only = sum(loan_status == "Default") / n() * 100, ch_only = sum(loan_status == "Charged Off") / n() * 100,
+  both = (sum(loan_status == "Default") + sum(loan_status == "Charged Off"))/ n() * 100 )
+
+LC_model_new = LC_total[,c("member_id", "funded_amnt", "grade", "emp_length", "home_ownership", "annual_inc", "loan_status","purpose", "dti", "delinq_2yrs", "inq_last_6mths", "open_acc", "revol_bal", "revol_util", "total_acc")]
+LC_model$dr = ''
+for (i in 1:nrow(LC_model)) {
+  for (j in 1:nrow(DR))
+  if (LC_model$grade[i] == DR$grade[j]){
+      LC_model$dr[i] = DR$both[j]
+  }
+}
+
+fit = lm(dr ~ grade + emp_length + home_ownership + annual_inc + purpose + dti + delinq_2yrs + inq_last_6mths + revol_bal + revol_util + total_acc, data = LC_model_new)
+```
+
+#### Step7. Close the connection
+```{r eval=FALSE}
+dbDisconnect(con)
+dbUnloadDriver(drv)
+```
+

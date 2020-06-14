@@ -1,0 +1,25 @@
+---
+title: "Blogs"
+author: "Danyang Chen"
+date: "3/29/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("~/Box Sync/Danielle_Blogs/danielleyang.github.io/")
+```
+
+```{r}
+library(blogdown)
+blogdown::install_hugo(force = TRUE)
+new_site(dir = '~/Box Sync/Danielle_Blogs/danielleyang.github.io/')
+install_theme("eddiewebb/hugo-resume", theme_example = TRUE, update_config = TRUE)
+blogdown::serve_site()
+```
+
+```{r}
+serve_site()
+```
+
+

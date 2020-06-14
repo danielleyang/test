@@ -1,0 +1,9 @@
+"0","### Load the postgre driver
+drv <- dbDriver(\"PostgreSQL\")
+
+### Creates a connection called payoff to the postgres database
+payoff <- dbConnect(drv, dbname = \"intern\", host = \"interndb-2.ctranyfsb6o1.us-east-1.rds.amazonaws.com\", port = 5432,
+                 user = \"payoff_intern\", password = \"reallysecure\")
+
+### Check if the tables exist
+dbExistsTable(payoff, \"lending_club_2007_2011\") # return TRUE"

@@ -1,0 +1,23 @@
+[
+  {
+      "grouping":"Data Science Packages",
+      "skills":[ "IP Networking","DNS","Firewalls","Load Balancing","Microservices","RESTful APIs","SaaS/PaaS/IaaS"]
+  },{
+      "grouping":"Languages, Operating Systems & Tools",
+      "skills":[ "R","Python","SAS","C","bash"]
+  },
+  {
+      "grouping":"Visualization & Dashboards",
+      "skills":[ "Tableau","RShiny","Plotly"]
+  },
+  {
+    "grouping":"Containers & Cloud",
+      "skills":[
+          {"name":"BOSH","link":"https://bosh.io"},
+          {"name":"Docker","link":"https://docker.com"},
+          {"name":"AWS","link":"https://aws.amazon.com"},
+          {"name":"Google Cloud","link":"https://cloud.google.com"},
+          {"name":"Linux","link":"https://bosh.io"}
+      ]
+  }
+]

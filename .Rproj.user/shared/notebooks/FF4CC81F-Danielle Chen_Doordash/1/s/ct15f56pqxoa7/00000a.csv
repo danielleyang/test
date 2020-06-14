@@ -1,0 +1,1 @@
+"0","data[which(data$`Order total` - data$`Amount of discount` == 0),] %>% group_by(`Is New`,`Consumer ID`) %>% summarize(Number  = n())"

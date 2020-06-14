@@ -1,0 +1,4 @@
+"0","a = Home_trans_zestimate %>% group_by(Zestimateyear) %>%"
+"0","  summarise(mape = "
+"0","median(abs((SaleAmount-ZestimateOnSaleDate)/SaleAmount) * 100))"
+"0","a"

@@ -1,0 +1,156 @@
+---
+title: "Danielle Chen Zillow Take-home Challenge"
+output:
+  html_document:
+    highlight: tango
+    df_print: kable
+    mathjax: null
+    number_sections: yes
+    code_folding: hide
+    theme: spacelab
+    toc: yes
+    toc_float: yes
+  always_allow_html: yes
+  html_notebook: default
+  pdf_document: default
+---
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE}
+# Setup the environment
+library(readxl)
+library(plotly)
+library(dplyr)
+library(tidyr)
+#packageVersion('plotly')
+
+# Read datasets
+Homes = read.csv("Homes.csv",header = FALSE)
+colnames(Homes) = c('PropertyID','Street')
+
+Transaction = read.csv("Transaction.csv",header = FALSE)
+colnames(Transaction) = c('PropertyID','SaleDate','SaleAmount','ZestimateOnSaleDate')
+
+Zestimate = read.csv("ZestimateHistory.csv", header = FALSE)
+colnames(Zestimate) = c('ZestimateDate','PropertyID','ZestimateAmount') 
+Zestimate$ZestimateDate = as.character(Zestimate$ZestimateDate)
+Zestimate$Zestimateyear = as.numeric(format(strptime(Zestimate$ZestimateDate, "%m/%d/%y %H:%M"), "%Y"))
+```
+
+# Q2
+There are 14190 houses in the homes. The good news is that we have all the Zestimate amount for all the homes. We have 7752 transaction records for 6115 houses. There are some houses sold more than once or twice.     
+First, we don't have sales date in transaction data. To identify the most expensive and least expensive homes, we need to use the help with Zestimate table. Linking the transaction table with Zestimate table by propertyID and ZestimateOnSaleDate can give us the Zestimate year. Zestimate year is a good reference for sold year. This helps me find out 552 homes' Zestimate.    
+For the rest of homes, we can use Zestimate to get an estimated sold year. Based on the boxplot (below) for each year's price, we can see that the median house sold price is increasing. Therefore, if ZestimateOnSaleDate is in between two years' Zestimate, it's reasonable to obtain the sold year by using the Zestimate year which Zestimate is closet to ZestimateOnSaleDate amount.
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+# What's in transaction data?
+# table(Homes$PropertyID %in% Transaction$PropertyID) 
+
+# Link Home, Transaction and Zestimate together
+soldHomes = Homes[Homes$PropertyID %in% Transaction$PropertyID,]
+Homes_trans = soldHomes %>% left_join(Transaction, by = "PropertyID")
+Home_trans_zestimate = Homes_trans %>% left_join(Zestimate, by = c("PropertyID" = "PropertyID","ZestimateOnSaleDate" = "ZestimateAmount"))
+
+# Check how many homes has Zestimate
+# table(is.na(Home_trans_zestimate$ZestimateDate))
+
+# Graph the trend of median and mean home prices
+p = plot_ly(Zestimate, y = ~ZestimateAmount, color = ~as.character(Zestimateyear), type = "box") %>%  layout(title = "Zestimate by Zestimate Year")
+p
+# 
+```
+
+Since Zestimate table only contains data between 1997 to 2007, we can combine the '> 2007' with 2007 data and find out the 5 most and 5 least expensive homes in 2007.
+Based on the results, the top 5 most expensive homes looks reasonable to me. However, some of the 5 least expensive homes are not realistic to me.   
+```{r}
+Zestimate = Zestimate[with(Zestimate, order(PropertyID, ZestimateAmount,Zestimateyear)), ]
+
+Home_trans_zestimate$Method = ''
+Home_trans_zestimate$Method = ifelse(is.na(Home_trans_zestimate$Zestimateyear),'Method2','Method1')
+
+Home_trans_zestimate$Zestimateyear = as.character(Home_trans_zestimate$Zestimateyear )
+
+Assign_years = function(propertyID,ZestimateOnSaleDate){
+  v = Zestimate[Zestimate$PropertyID == propertyID,3] 
+  y = Zestimate[Zestimate$PropertyID == propertyID,4]
+  idx = findInterval(ZestimateOnSaleDate, v)
+  v1 = v[idx]
+  v2 = v[idx+1]
+  
+  if (length(v) == 0){
+    return("NULL")
+  }
+  else if (ZestimateOnSaleDate < v[1]){
+    return(paste("<",y[1]))
+  }
+  else if (ZestimateOnSaleDate > v[length(v)]){
+    return(paste(">",y[length(v)]))
+  }
+  else if (ZestimateOnSaleDate - v1 > v2 - ZestimateOnSaleDate){
+    return(as.character(y[idx+1]))
+  }
+  else if (ZestimateOnSaleDate - v1 < v2 - ZestimateOnSaleDate){
+    return(as.character(y[idx]))
+  }
+  else if (ZestimateOnSaleDate - v1 == v2 - ZestimateOnSaleDate){
+    return(paste("In Between",y[idx],"and",y[idx+1]))
+  }
+}
+
+for (i in 1:nrow(Home_trans_zestimate)) {
+  if (Home_trans_zestimate[i,8] == 'Method2' & !is.na(Home_trans_zestimate$ZestimateOnSaleDate[i]))
+  {Home_trans_zestimate[i,7] = Assign_years(Home_trans_zestimate$PropertyID[i],Home_trans_zestimate$ZestimateOnSaleDate[i])
+  }
+}
+
+Home2007 = Home_trans_zestimate[Home_trans_zestimate$Zestimateyear %in% c('> 2007','2007'),]
+
+print("The 5 most expensive homes are: ")
+head(arrange(Home2007,desc(SaleAmount)), n = 5)[,1:5]
+
+print("The 5 most least homes are: ")
+tail(arrange(Home2007,desc(SaleAmount)), n = 5)[,1:5]
+
+b = tail(arrange(Home2007,desc(SaleAmount)), n = 5)[,1:5]
+MAPE2007 = mean(abs((Home2007$SaleAmount-Home2007$ZestimateOnSaleDate)/Home2007$SaleAmount) * 100)
+MAPEleast5 = mean(abs((b$SaleAmount-b$ZestimateOnSaleDate)/b$SaleAmount) * 100)
+```
+
+# Q3
+```{r}
+Home_Zestimate = Zestimate %>% left_join(Homes, by = "PropertyID")
+Home_Zestimate[Home_Zestimate$Zestimateyear == 2007,] %>% group_by(Street) %>% summarise(mean = mean(ZestimateAmount),max = max(ZestimateAmount), min = min(ZestimateAmount) )
+```
+
+# Q4
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+Zestimatemedian = Zestimate %>% group_by(Zestimateyear) %>% summarise(median = round(median(ZestimateAmount),0))
+Zestimatemedian
+
+p <- plot_ly(data = Zestimatemedian, x = ~Zestimateyear, y = ~median) %>% layout(title = 'median Zestimate by Year',yaxis = list(title = 'median Zestimate in $')) 
+p
+```
+
+# Q5
+```{r}
+a = Home_trans_zestimate %>% group_by(Zestimateyear) %>%
+  summarise(mape = 
+median(abs((SaleAmount-ZestimateOnSaleDate)/SaleAmount) * 100))
+a
+```
+
+
+# Q6
+```{r}
+Zestimatemedian = Zestimate %>% group_by(Zestimateyear) %>% summarise(median = round(median(ZestimateAmount),0))
+
+Zestimatemedian$Zestimateyear = as.character(Zestimatemedian $Zestimateyear)
+Zestimatemedian = Zestimatemedian %>% left_join(a, by = "Zestimateyear")
+
+Zestimatemedian$newZHVIlower = Zestimatemedian$median*(1-Zestimatemedian$mape/100)
+Zestimatemedian$newZHVIhigher = Zestimatemedian$median/(1+Zestimatemedian$mape/100)
+
+Zestimatemedian[,c(1,4,5)]
+```
+
+
+
+

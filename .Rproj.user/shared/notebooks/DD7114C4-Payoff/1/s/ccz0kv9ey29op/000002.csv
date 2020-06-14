@@ -1,0 +1,65 @@
+"0","### A. Combine all the tables
+LC0711_complete = dbGetQuery(payoff, \"SELECT * FROM lending_club_2007_2011\")
+LC1213_complete = dbGetQuery(payoff, \"SELECT * FROM lending_club_2012_2013\")
+LC14_completed = dbGetQuery(payoff, \"SELECT * FROM lending_club_2014\")
+LC15_completed = dbGetQuery(payoff, \"SELECT * FROM lending_club_2015\")
+LC_total = rbind(LC0711_complete,LC1213_complete)
+LC_total = rbind(LC_total,LC14_completed)
+LC_total = rbind(LC_total,LC15_completed)
+
+### B. Unify the format 
+### b1. Remove the %
+LC_total$int_rate = gsub(\"%\", \"\", LC_total$int_rate)
+LC_total$int_rate = as.numeric(LC_total$int_rate)
+LC_total$revol_util = gsub(\"%\", \"\", LC_total$revol_util)
+LC_total$revol_util = as.numeric(LC_total$revol_util)
+
+### b2. Only keep year for these 5 variables \"issue_d\",\"earliest_cr_line\",\"last_pymnt_d\",\"next_pymnt_d\",\"last_credit_pull_d\"
+Dates_List = c(\"issue_d\",\"earliest_cr_line\",\"last_pymnt_d\",\"next_pymnt_d\",\"last_credit_pull_d\")
+LC_total.c = LC_total
+for (i in 1:length(Dates_List)){
+  date = as.yearmon(LC_total.c[,Dates_List[i]],\"%b-%Y\")
+  LC_total.c[,Dates_List[i]] = format(date, \"%Y\")
+}
+
+### b3.Remove Loans that do not meet the credit policy and NA in member_id
+LC_total = LC_total[!LC_total$id == \"Loans that do not meet the credit policy\",]
+# List_names = colnames(LC0711_complete)[colSums(is.na(LC1213_complete)) > 180000]
+
+### D. Check Categorical Variables
+Categorical_List = c(\"term\",\"grade\",\"sub_grade\",\"home_ownership\",\"loan_status\",\"purpose\",\"addr_state\")
+sapply(LC_total[,Categorical_List], table)
+#### Figure 1. Pie_chart for grade
+n = nrow(LC_total)
+lbls=c('A','B','C','D','E','F','G')
+pct=round(100*table(LC_total$grade)/n)
+lab=paste(lbls,pct)
+lab=paste(lab,'%',sep='')
+pie(table(LC_total$grade),labels=lab,main='Grade')
+### d1. Remove \"Does not meet the credit policy. Status:\"
+remove_status = function(d){
+  d.c = d
+  idx = which(colnames(d.c)==\"loan_status\")
+  d.c[,idx] = ifelse(grepl(\"Does not meet the credit policy. Status:\", d.c[,idx]),
+              gsub(\"Does not meet the credit policy. Status:\", \"\", d.c[,idx]), d.c[,idx])
+  return(d.c)
+}
+LC_total = remove_status(LC_total)
+
+### E. Check 6 summary statistics for all quantitative variables.
+summary(LC_total[,-which(names(LC_total) %in% c(\"id\", \"member_id\",\"emp_title\",\"emp_length\", \"verification_status\",\"verification_status_joint\",\"pymnt_plan\", \"url\", \"desc\", \"title\",\"zip_code\",\"initial_list_status\", \"policy_code\", \"application_type\", \"acc_now_deling\", \"deling_amnt\", \"pub_rec_bankrupticies\", Categorical_List,Dates_List))])
+
+### F. Plot Boxplot and Histogram for quantitative variables
+List_names = colnames(LC_total)[colSums(is.na(LC_total)) > 400000]
+Quantitative_List  = names(LC_total)[!names(LC_total) %in% c(\"id\", \"member_id\",\"emp_title\",\"emp_length\", \"verification_status\",\"verification_status_joint\",\"pymnt_plan\", \"url\", \"desc\", \"title\",\"zip_code\",\"initial_list_status\", \"policy_code\", \"application_type\", \"acc_now_deling\", \"deling_amnt\", \"pub_rec_bankrupticies\", Categorical_List,Dates_List,List_names)]
+
+par(mfrow = c(3,3))
+for(i in 1:length(Quantitative_List)) {
+  hist(LC_total[, Quantitative_List[i]], main = paste(\"Histogram of\", Quantitative_List[i]), xlab = Quantitative_List[i])
+  boxplot(LC_total[, Quantitative_List[i]], main = paste(\"Boxplot of\", Quantitative_List[i]), xlab = Quantitative_List[i])#### Figure3
+}
+#### Figure 2 An example of histogram
+par(mfrow = c(2,2))
+for(i in 1:4) {
+  hist(LC_total[, Quantitative_List[i]], main = paste(\"Histogram of\", Quantitative_List[i]), xlab = Quantitative_List[i])
+}"
